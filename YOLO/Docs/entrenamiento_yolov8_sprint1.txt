@@ -1,0 +1,201 @@
+DOCUMENTACION SPRINT 1 - ENTRENAMIENTO IA YERBA MATE CON YOLOv8
+
+Objetivo
+--------
+Entrenar un modelo de segmentacion YOLOv8 Nano para detectar y segmentar dos
+clases de interes en Yerba Mate:
+
+0: hoja
+1: palo
+
+El modelo base elegido es yolov8n-seg.pt porque es la variante Nano de YOLOv8
+para segmentacion. Esta arquitectura prioriza eficiencia, bajo consumo de RAM y
+velocidad de inferencia, condiciones importantes para el despliegue final en una
+Raspberry Pi 3B+ con 1GB de RAM.
+
+
+Archivos creados
+----------------
+1. train_yerba_yolov8_seg.py
+   Script principal de entrenamiento y exportacion.
+
+2. Docs/entrenamiento_yolov8_sprint1.txt
+   Documentacion del proceso, requisitos, estructura esperada y salidas.
+
+
+Requisitos del entorno local
+----------------------------
+El entrenamiento esta pensado para ejecutarse en una PC local con:
+
+- CPU Intel i7.
+- GPU NVIDIA RTX 4050 con soporte CUDA.
+- Python 3.10 o superior recomendado.
+- PyTorch con CUDA habilitado.
+- Ultralytics YOLOv8.
+
+Instalacion base recomendada:
+
+pip install ultralytics
+
+Para PyTorch con CUDA, instalar la version correspondiente desde la pagina
+oficial de PyTorch segun la version de CUDA disponible en la PC.
+
+
+Dataset esperado
+----------------
+El dataset debe estar exportado desde CVAT en formato YOLO compatible con
+segmentacion. En la raiz del proyecto debe existir un archivo data.yaml.
+
+Ejemplo recomendado de data.yaml:
+
+path: C:/Users/Sebastian/Datasets/yerba_mate
+train: images/train
+val: images/val
+
+names:
+  0: hoja
+  1: palo
+
+Tambien pueden usarse rutas absolutas directamente:
+
+train: C:/Users/Sebastian/Datasets/yerba_mate/images/train
+val: C:/Users/Sebastian/Datasets/yerba_mate/images/val
+
+names:
+  0: hoja
+  1: palo
+
+Notas:
+- Las imagenes de entrenamiento deben estar en train.
+- Las imagenes de validacion deben estar en val.
+- Las etiquetas deben estar en la estructura YOLO correspondiente, normalmente
+  labels/train y labels/val.
+- Las clases deben mantenerse exactamente como:
+  0: hoja
+  1: palo
+
+
+Configuracion de hardware
+-------------------------
+El script verifica explicitamente si CUDA esta disponible mediante PyTorch:
+
+torch.cuda.is_available()
+
+Si CUDA esta disponible, el entrenamiento se ejecuta con device=0, usando la
+GPU NVIDIA RTX 4050. Antes de iniciar el entrenamiento se imprime en consola el
+nombre de la GPU y la version de CUDA detectada por PyTorch.
+
+Si CUDA no esta disponible, el script continua en CPU e imprime una advertencia.
+Esto permite diagnosticar rapidamente problemas de instalacion de drivers,
+CUDA o PyTorch.
+
+
+Hiperparametros principales
+---------------------------
+Modelo base:
+yolov8n-seg.pt
+
+Epochs:
+100
+
+Batch:
+16 por defecto.
+
+Motivo:
+Batch 16 es una configuracion conservadora y estable para una RTX 4050. Si se
+observa que queda suficiente VRAM disponible durante el entrenamiento, puede
+probarse batch=32 modificando TrainingConfig.batch en el script.
+
+Tamano de imagen:
+640x640 pixeles.
+
+Motivo:
+640 balancea precision y velocidad. Es suficientemente grande para capturar
+detalles de palos y hojas, pero sigue siendo razonable para exportacion e
+inferencia posterior en hardware limitado.
+
+Checkpoints:
+El script guarda automaticamente checkpoints y conserva el mejor modelo en:
+
+runs/yerba_mate_seg/sprint1_yolov8n_seg/weights/best.pt
+
+Tambien guarda checkpoints periodicos cada 10 epochs mediante save_period=10.
+
+Metricas y graficos:
+El parametro plots=True habilita la generacion de salidas visuales como:
+
+- Graficos de perdida.
+- Matriz de confusion.
+- Curvas Precision-Recall.
+- Resultados de validacion.
+
+Estas salidas quedan dentro de la carpeta del experimento en runs.
+
+
+Ejecucion
+---------
+Desde la raiz del proyecto:
+
+python train_yerba_yolov8_seg.py
+
+Antes de ejecutar, confirmar que el archivo data.yaml este presente en la raiz
+o ajustar la ruta en TrainingConfig.data_yaml.
+
+
+Exportacion ONNX
+----------------
+Al finalizar el entrenamiento, el script toma automaticamente:
+
+runs/yerba_mate_seg/sprint1_yolov8n_seg/weights/best.pt
+
+y lo exporta a ONNX con:
+
+format="onnx"
+imgsz=640
+opset=12
+simplify=True
+dynamic=False
+
+El resultado esperado es:
+
+best.onnx
+
+ubicado junto al modelo entrenado exportado por Ultralytics.
+
+ONNX se eligio porque es un formato portable y liviano, adecuado para inferencia
+en CPU/ARM y despliegues embebidos como Raspberry Pi 3B+.
+
+
+Recomendaciones para Raspberry Pi 3B+
+-------------------------------------
+- Usar el modelo Nano entrenado y exportado a ONNX.
+- Mantener imgsz=640 solo si el FPS es aceptable.
+- Si la Raspberry Pi no alcanza el rendimiento esperado, probar inferencia con
+  imagenes de entrada menores, por ejemplo 512 o 416, evaluando la perdida de
+  precision.
+- Ejecutar pruebas con imagenes reales del flujo final de trabajo.
+- Medir FPS, uso de RAM y temperatura durante inferencia prolongada.
+
+
+Salidas esperadas
+-----------------
+Despues de una ejecucion correcta deberian existir:
+
+- runs/yerba_mate_seg/sprint1_yolov8n_seg/weights/best.pt
+- runs/yerba_mate_seg/sprint1_yolov8n_seg/weights/last.pt
+- Archivo ONNX exportado desde best.pt
+- Graficos de entrenamiento y validacion dentro de la carpeta del experimento
+
+
+Resumen del proceso implementado
+--------------------------------
+1. Se define una configuracion centralizada con dataclass.
+2. Se valida que exista data.yaml.
+3. Se verifica si CUDA esta disponible.
+4. Se imprime si se usara GPU o CPU.
+5. Se carga yolov8n-seg.pt.
+6. Se entrena durante 100 epochs con imgsz=640 y batch=16.
+7. Se guardan checkpoints, metricas y graficos.
+8. Se localiza automaticamente best.pt.
+9. Se exporta best.pt a formato ONNX optimizado para despliegue CPU/ARM.
+
